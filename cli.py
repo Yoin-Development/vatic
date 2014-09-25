@@ -24,6 +24,173 @@ import vision.pascal
 import itertools
 from xml.etree import ElementTree
 
+
+@handler("Create samples from the annotaded frames")
+class createsample(DumpCommand):
+    def setup(self):
+        parser = argparse.ArgumentParser(parents = [self.parent])
+        parser.add_argument("output")
+        parser.add_argument("--width", default=720, type=int)
+        parser.add_argument("--height", default=480, type=int)
+        parser.add_argument("--modulus", default=100, type=int)
+        parser.add_argument("--number_samples", default=10, type=int)
+        parser.add_argument("--no-resize",
+            action="store_true", default = False)
+        parser.add_argument("--positive", action="store_true", default=False)
+        parser.add_argument("--negative", action="store_true", default=False)
+        return parser
+
+    def __call__(self, args):
+        try:
+            os.makedirs("{0}".format(args.output))
+            os.makedirs("{0}/pos".format(args.output))
+            os.makedirs("{0}/neg".format(args.output))
+        except:
+            pass
+
+        video, data = self.getdata(args)
+
+        random.seed(42)
+
+        if args.negative:
+            frame = 0
+            totalframes = video.totalframes
+
+            while frame < totalframes:
+                frame += 1
+                if frame % 20 != 0:
+                    continue
+
+                count = 0
+                frame_annotated = 0
+
+                while count < args.number_samples:
+                    w = 128
+                    h = 128
+                    x = random.randrange(0, video.width-w)
+                    y = random.randrange(0, video.height-h)
+                    tmp_box = Box()
+                    tmp_box.xtl = x
+                    tmp_box.ytl = y
+                    tmp_box.xbr = x+w
+                    tmp_box.ybr = y+h
+                    overlapping = False
+                    tmp_box.area = w*h
+
+                    for track in data:
+                        for box in track.boxes:
+                            if box.frame != frame:
+                                continue
+
+                            if box.occluded > 0:
+                                continue
+                            if box.lost > 0:
+                                continue
+
+                            frame_annotated += 1
+
+                            if box.percentoverlap(tmp_box) > 0.05:
+                                overlapping = True
+
+                            # frame found, break
+                            break
+
+                        # continue searching if frame was not overlapping
+                        if overlapping:
+                            break
+
+                    # continue with new box if frame overlapped
+                    if overlapping:
+                        continue
+
+                    # check if frame any annotated
+                    if frame_annotated > 0:
+                        image = video[frame]
+                        degrees = 0
+                        cx = x+w/2
+                        cy = y+h/2
+                        sq = int(math.ceil(math.sqrt(w**2+h**2)))
+                        image = image.crop((cx-sq/2, cy-sq/2,
+                                            cx+sq/2, cy+sq/2))
+
+                        #image = image.crop((x,y,x+w,y+h))
+
+                        while degrees <= 90:
+                            img = image.rotate(degrees)
+                            iw, ih = img.size
+                            ix = iw/2-w/2
+                            iy = ih/2-h/2
+                            img = img.crop((ix,iy,ix+w,iy+h))
+                            img.save("{0}/neg/{1}_{2}_{3}_{4}.jpg".format(
+                                args.output, video.slug, frame, count, degrees))
+                            degrees += 30
+
+                        count += 1
+                    # else continue to main loop
+                    else:
+                        break
+
+        i = 0
+        # prepend class label
+        if args.positive:
+            for id, track in enumerate(data):
+                for box in track.boxes:
+                    x,y,w,h = [0,0,0,0]
+
+                    if box.occluded > 0:
+                        continue
+                    if box.lost > 0:
+                        continue
+
+                    i += 1
+                    if i % args.modulus == 0:
+                        break
+
+                    if box.width > box.height:
+                        # Resize height
+                        x = box.xtl
+                        y = box.center[1] - box.width/2
+                        w = box.width
+                        h = box.width
+
+                    elif box.height > box.width:
+                        # Resize width
+                        x = box.center[0] - box.height/2
+                        y = box.ytl
+                        w = box.height
+                        h = box.height
+                    else:
+                        # Resize whole
+                        x = box.xtl
+                        y = box.ytl
+                        w = box.width
+                        h = box.height
+
+                    while (x + w) > video.width: x-=1
+                    while x < 0: x+=1
+                    while (y + h) > video.height: y-=1
+                    while y < 0: y+=1
+
+                    degrees = 0
+                    cx = x+w/2
+                    cy = y+h/2
+                    sq = int(math.ceil(math.sqrt(w**2+h**2)))
+                    image = video[box.frame].crop((cx-sq/2, cy-sq/2,
+                                            cx+sq/2, cy+sq/2))
+
+                    while degrees <= 90:
+                        #image = video[box.frame].crop((x,y,x+w,y+h))
+                        img = image.rotate(degrees)
+                        iw, ih = img.size
+                        ix = iw/2-w/2
+                        iy = ih/2-h/2
+                        img = img.crop((ix,iy,ix+w,iy+h))
+
+                        img.save("{0}/pos/{1}_{2}_{3}_{4}.jpg".format(
+                            args.output, video.slug, box.frame, id, degrees))
+                        degrees += 30
+
+
 @handler("Decompresses an entire video into frames")
 class extract(Command):
     def setup(self):
@@ -198,7 +365,7 @@ class load(LoadCommand):
 
         # create video
         video = Video(slug = args.slug,
-                      location = os.path.realpath(args.location), 
+                      location = os.path.realpath(args.location),
                       width = width,
                       height = height,
                       totalframes = maxframes,
@@ -250,7 +417,7 @@ class load(LoadCommand):
 
         print "Creating segments..."
         # create shots and jobs
-       
+
         if args.for_training:
                 segment = Segment(video = video)
                 if args.for_training_start:
@@ -281,7 +448,7 @@ class load(LoadCommand):
                         stop = min(start + segmentlength + args.overlap + 1,
                                    ustop)
                         segment = Segment(start = start,
-                                          stop = stop, 
+                                          stop = stop,
                                           video = video)
                         job = Job(segment = segment, group = group)
                         session.add(segment)
@@ -416,7 +583,7 @@ class DumpCommand(Command):
         video = video.one()
 
         if args.merge:
-            for boxes, paths in merge.merge(video.segments, 
+            for boxes, paths in merge.merge(video.segments,
                                             threshold = args.merge_threshold):
                 workers = list(set(x.job.workerid for x in paths))
                 tracklet = DumpCommand.Tracklet(paths[0].label.text,
@@ -464,7 +631,7 @@ class visualize(DumpCommand):
 
     def __call__(self, args):
         video, data = self.getdata(args)
-        
+
         # prepend class label
         for track in data:
             for box in track.boxes:
@@ -803,7 +970,7 @@ class dump(DumpCommand):
                     lastframe = box.frame
                 else:
                     output = True
-                    
+
                 if output:
                     file.write("<event>");
                     file.write("<username>anonymous</username>")
@@ -830,7 +997,7 @@ class dump(DumpCommand):
 
         file.write("</annotation>")
         file.write("\n")
-    
+
     def dumppascal(self, folder, video, data, difficultthresh, skip,
                    negdir):
         byframe = {}
@@ -855,7 +1022,7 @@ class dump(DumpCommand):
             os.makedirs("{0}/JPEGImages/".format(folder))
         except:
             pass
-        
+
         numdifficult = 0
         numtotal = 0
 
@@ -1061,7 +1228,7 @@ class sample(Command):
                                     label = True) for x in job.paths]
 
                 if args.frames > job.segment.stop - job.segment.start:
-                    frames = range(job.segment.start, job.segment.stop + 1) 
+                    frames = range(job.segment.start, job.segment.stop + 1)
                 else:
                     frames = random.sample(xrange(job.segment.start,
                                                 job.segment.stop + 1),
@@ -1167,7 +1334,7 @@ class listvideos(Command):
                 videos = videos.join(Segment)
                 videos = videos.join(Job)
                 videos = videos.filter(Job.completed == True)
-        
+
         if args.count:
             print videos.count()
         else:
