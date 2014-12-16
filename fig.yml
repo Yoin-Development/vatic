@@ -1,0 +1,20 @@
+vatic:
+    build: .
+    links:
+        - mysql
+    volumes: 
+        - ./data/:/data/:rw
+        - ./turkic/:/turkic/
+        - ./pyvision/:/pyvision/
+        - ./extract_tmp:/extract_tmp/
+        - ./extract:/extract/
+        - ./public/frames/:/var/www/vatic/public/frames/
+    ports:
+        - "8181:80"
+
+mysql:
+    image: tutum/mysql
+    environment:
+        MYSQL_PASS: mypass
+    ports:
+        - "3306:3306"
