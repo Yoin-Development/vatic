@@ -2,19 +2,20 @@ vatic:
     build: .
     links:
         - mysql
-    volumes: 
-        - ./data/:/data/:rw
-        - ./turkic/:/turkic/
+    volumes:
+        - ./data/:/data/
         - ./pyvision/:/pyvision/
         - ./extract_tmp:/extract_tmp/
         - ./extract:/extract/
         - ./public/frames/:/var/www/vatic/public/frames/
     ports:
         - "8181:80"
+    environment:
+        HOSTNAME: vatic.dev.yoin.it
 
 mysql:
     image: tutum/mysql
     environment:
         MYSQL_PASS: mypass
-    ports:
+    expose:
         - "3306:3306"
