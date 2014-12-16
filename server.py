@@ -10,6 +10,8 @@ from models import *
 import logging
 logger = logging.getLogger("vatic.server")
 
+logger.setLevel(logging.DEBUG)
+
 @handler()
 def getjob(id, verified):
     job = session.query(Job).get(id)
@@ -68,7 +70,7 @@ def readpaths(tracks):
     for label, track, attributes in tracks:
         path = Path()
         path.label = session.query(Label).get(label)
-        
+
         logger.debug("Received a {0} track".format(path.label.text))
 
         visible = False

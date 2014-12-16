@@ -41,7 +41,7 @@ function boot()
         mturk_showstatistics();
     }
 
-    mturk_disabletimer();
+    //mturk_disabletimer();
 
     function dispatch(training)
     {
