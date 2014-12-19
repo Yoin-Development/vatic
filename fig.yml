@@ -1,4 +1,4 @@
-vatic:
+vaticdev:
     build: .
     links:
         - mysql
@@ -8,8 +8,9 @@ vatic:
         - ./extract_tmp:/extract_tmp/
         - ./extract:/extract/
         - ./public/frames/:/var/www/vatic/public/frames/
+        - ./scripts:/scripts/:ro
     ports:
-        - "8181:80"
+        - "8282:80"
     environment:
         HOSTNAME: vatic.dev.yoin.it
 

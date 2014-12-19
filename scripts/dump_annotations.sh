@@ -1,4 +1,7 @@
 #!/bin/bash
+#Author: Richard Torenvliet
+#Github alias: icyrizard
+
 INPUT_DIR=data/
 OUTPUT_DIR=data/annotations
 FIND_FORMAT=mp4
@@ -13,12 +16,12 @@ function HELP {
     echo -e "Basic usage: ./$SCRIPT"\\n
     echo "Command line switches are optional. The following switches are
     recognized."
-    echo "-d --Set output dimensions ${BOLD}$OUTPUT_DIMS${NORM}."
-    echo "-i --Set input dir. default: ${BOLD}$INPUT_DIR${NORM}."
-    echo "-f --Set extension to find {mp4, mpeg, etc..}. default: ${BOLD}$FIND_FORMAT${NORM}"
+    echo "-d --Set output dimensions $OUTPUT_DIMS}."
+    echo "-i --Set input dir. default: $INPUT_DIR."
+    echo "-f --Set extension to find {mp4, mpeg, etc..}. default: $FIND_FORMAT"
     echo "-h --Displays this help message. No further functions are
     performed."
-    echo -e "Example: ./${BOLD}$SCRIPT -d 1280x720 -i data/ ${NORM}"
+    echo -e "Example: ./$SCRIPT -d 1280x720 -i data/ "
     exit 1
 }
 
@@ -44,7 +47,7 @@ while getopts :i:d:f:h FLAG; do
             HELP
             ;;
         \?)
-            echo -e \\n"Option -${BOLD}$OPTARG${NORM} not allowed."
+            echo -e \\n"Option -$OPTARG not allowed."
             HELP
             ;;
     esac
