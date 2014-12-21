@@ -10,12 +10,14 @@ OUTPUT_DIMS=1280x720
 #Set Script Name variable
 SCRIPT=`basename ${BASH_SOURCE[0]}`
 
+# forloop delimiter
+#IFS=$'\n'
+
 #Help function
 function HELP {
     echo -e \\n"Help documentation for ${SCRIPT}."\\n
     echo -e "Basic usage: ./$SCRIPT"\\n
-    echo "Command line switches are optional. The following switches are
-    recognized."
+    echo "Command line switches are optional. The following switches are recognized."
     echo "-d --Set output dimensions $OUTPUT_DIMS}."
     echo "-i --Set input dir. default: $INPUT_DIR."
     echo "-f --Set extension to find {mp4, mpeg, etc..}. default: $FIND_FORMAT"
@@ -32,8 +34,11 @@ if [ $NUMARGS -eq 0 ]; then
     exit 1
 fi
 
-while getopts :i:d:f:h FLAG; do
+while getopts :o:i:d:f:h FLAG; do
     case $FLAG in
+        o)
+            OUTPUT_DIR=$OPTARG
+            ;;
         i)
             INPUT_DIR=$OPTARG
             ;;
@@ -56,12 +61,21 @@ done
 # shift ops, all optional args are now removed $1 will have to be the filename
 shift $((OPTIND-1))
 
-for i in `find $INPUT_DIR -name *.$FIND_FORMAT`
+VATICNAME=$1
+mkdir -p $OUTPUT_DIR
+
+VIDEOS=`fig run $VATICNAME turkic list`
+echo -e "Attempting to dump:\n$VIDEOS"
+
+for VID in $VIDEOS
 do
+    ID=`echo $VID | tr -d '\r\n'`
+    # prevents to dump empty string (cause is internal to vatic output)
+    if [ -z $ID ]
+    then
+        continue
+    fi
 
-    ID=`echo $i | awk '{split($0, str, "."); print str[1]}' | \
-        cut -d "/" -f2`
-    VIDEO="/$i"
-
-    fig run vatic turkic dump $ID -o /$OUTPUT_DIR/$ID.txt --dimensions $OUTPUT_DIMS
+    bash -c "fig run vaticdev turkic dump $ID -o /$OUTPUT_DIR/$ID.txt \
+                --dimensions $OUTPUT_DIMS"
 done
