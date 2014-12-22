@@ -10,3 +10,6 @@ bootstrap:
 # remove, build and run the image
 run:
 	fig rm --force $(VATIC_NAME); fig build && fig up
+
+build:
+	fig rm --force $(VATIC_NAME); fig build

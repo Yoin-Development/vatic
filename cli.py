@@ -1,258 +1,36 @@
 import os
+import qa
 import sys
 import math
-import argparse
 import config
 import shutil
-from turkic.cli import handler, importparser, Command, LoadCommand
-from turkic.database import session
-import sqlalchemy
 import random
+import argparse
+import itertools
+import cStringIO
+import parsedatetime
+import datetime, time
+
+import sqlalchemy
+from xml.etree import ElementTree
+from PIL import Image, ImageDraw, ImageFont
+
+import turkic.models
+from turkic.database import session
+from turkic.cli import handler, importparser, Command, LoadCommand
+from extendturkic import DumpCommand
+
 from vision import Box
 from vision import ffmpeg
 import vision.visualize
 import vision.track.interpolation
-import turkic.models
-from models import *
-import cStringIO
-from PIL import Image, ImageDraw, ImageFont
-import qa
-import merge
-import parsedatetime
-import datetime, time
 import vision.pascal
-import itertools
-from xml.etree import ElementTree
 
+from models import Job, Video, Label, Attribute, Segment, Path, \
+        CompletionBonus, PerObjectBonus
 
-class DumpCommand(Command):
-    parent = argparse.ArgumentParser(add_help=False)
-    parent.add_argument("slug")
-    parent.add_argument("--merge", "-m", action="store_true", default=False)
-    parent.add_argument("--merge-threshold", "-t",
-                        type=float, default = 0.5)
-    parent.add_argument("--worker", "-w", nargs = "*", default = None)
-
-    class Tracklet(object):
-        def __init__(self, label, paths, boxes, workers):
-            self.label = label
-            self.paths = paths
-            self.boxes = sorted(boxes, key = lambda x: x.frame)
-            self.workers = workers
-
-        def bind(self):
-            for path in self.paths:
-                self.boxes = Path.bindattributes(path.attributes, self.boxes)
-
-    def getdata(self, args):
-        response = []
-        video = session.query(Video).filter(Video.slug == args.slug)
-        if video.count() == 0:
-            print "Video {0} does not exist!".format(args.slug)
-            raise SystemExit()
-        video = video.one()
-
-        if args.merge:
-            for boxes, paths in merge.merge(video.segments,
-                                            threshold = args.merge_threshold):
-                workers = list(set(x.job.workerid for x in paths))
-                tracklet = DumpCommand.Tracklet(paths[0].label.text,
-                                                paths, boxes, workers)
-                response.append(tracklet)
-        else:
-            for segment in video.segments:
-                for job in segment.jobs:
-                    if not job.useful:
-                        continue
-                    worker = job.workerid
-                    for path in job.paths:
-                        tracklet = DumpCommand.Tracklet(path.label.text,
-                                                        [path],
-                                                        path.getboxes(),
-                                                        [worker])
-                        response.append(tracklet)
-
-        if args.worker:
-            workers = set(args.worker)
-            response = [x for x in response if set(x.workers) & workers]
-
-        interpolated = []
-        for track in response:
-            path = vision.track.interpolation.LinearFill(track.boxes)
-            tracklet = DumpCommand.Tracklet(track.label, track.paths,
-                                            path, track.workers)
-            interpolated.append(tracklet)
-        response = interpolated
-
-        for tracklet in response:
-            tracklet.bind()
-
-        return video, response
-
-@handler("Create samples from the annotaded frames")
-class createsample(DumpCommand):
-    def setup(self):
-        parser = argparse.ArgumentParser(parents = [self.parent])
-        parser.add_argument("output")
-        parser.add_argument("--width", default=720, type=int)
-        parser.add_argument("--height", default=480, type=int)
-        parser.add_argument("--modulus", default=100, type=int)
-        parser.add_argument("--number_samples", default=10, type=int)
-        parser.add_argument("--no-resize",
-            action="store_true", default = False)
-        parser.add_argument("--positive", action="store_true", default=False)
-        parser.add_argument("--negative", action="store_true", default=False)
-        return parser
-
-    def __call__(self, args):
-        try:
-            os.makedirs("{0}".format(args.output))
-            os.makedirs("{0}/pos".format(args.output))
-            os.makedirs("{0}/neg".format(args.output))
-        except:
-            pass
-
-        video, data = self.getdata(args)
-
-        random.seed(42)
-
-        if args.negative:
-            frame = 0
-            totalframes = video.totalframes
-
-            while frame < totalframes:
-                frame += 1
-                if frame % 20 != 0:
-                    continue
-
-                count = 0
-                frame_annotated = 0
-
-                while count < args.number_samples:
-                    w = 128
-                    h = 128
-                    x = random.randrange(0, video.width-w)
-                    y = random.randrange(0, video.height-h)
-                    tmp_box = Box()
-                    tmp_box.xtl = x
-                    tmp_box.ytl = y
-                    tmp_box.xbr = x+w
-                    tmp_box.ybr = y+h
-                    overlapping = False
-                    tmp_box.area = w*h
-
-                    for track in data:
-                        for box in track.boxes:
-                            if box.frame != frame:
-                                continue
-
-                            if box.occluded > 0:
-                                continue
-                            if box.lost > 0:
-                                continue
-
-                            frame_annotated += 1
-
-                            if box.percentoverlap(tmp_box) > 0.05:
-                                overlapping = True
-
-                            # frame found, break
-                            break
-
-                        # continue searching if frame was not overlapping
-                        if overlapping:
-                            break
-
-                    # continue with new box if frame overlapped
-                    if overlapping:
-                        continue
-
-                    # check if frame any annotated
-                    if frame_annotated > 0:
-                        image = video[frame]
-                        degrees = 0
-                        cx = x+w/2
-                        cy = y+h/2
-                        sq = int(math.ceil(math.sqrt(w**2+h**2)))
-                        image = image.crop((cx-sq/2, cy-sq/2,
-                                            cx+sq/2, cy+sq/2))
-
-                        #image = image.crop((x,y,x+w,y+h))
-
-                        while degrees <= 90:
-                            img = image.rotate(degrees)
-                            iw, ih = img.size
-                            ix = iw/2-w/2
-                            iy = ih/2-h/2
-                            img = img.crop((ix,iy,ix+w,iy+h))
-                            img.save("{0}/neg/{1}_{2}_{3}_{4}.jpg".format(
-                                args.output, video.slug, frame, count, degrees))
-                            degrees += 30
-
-                        count += 1
-                    # else continue to main loop
-                    else:
-                        break
-
-        i = 0
-        # prepend class label
-        if args.positive:
-            for id, track in enumerate(data):
-                for box in track.boxes:
-                    x,y,w,h = [0,0,0,0]
-
-                    if box.occluded > 0:
-                        continue
-                    if box.lost > 0:
-                        continue
-
-                    i += 1
-                    if i % args.modulus == 0:
-                        break
-
-                    if box.width > box.height:
-                        # Resize height
-                        x = box.xtl
-                        y = box.center[1] - box.width/2
-                        w = box.width
-                        h = box.width
-
-                    elif box.height > box.width:
-                        # Resize width
-                        x = box.center[0] - box.height/2
-                        y = box.ytl
-                        w = box.height
-                        h = box.height
-                    else:
-                        # Resize whole
-                        x = box.xtl
-                        y = box.ytl
-                        w = box.width
-                        h = box.height
-
-                    while (x + w) > video.width: x-=1
-                    while x < 0: x+=1
-                    while (y + h) > video.height: y-=1
-                    while y < 0: y+=1
-
-                    degrees = 0
-                    cx = x+w/2
-                    cy = y+h/2
-                    sq = int(math.ceil(math.sqrt(w**2+h**2)))
-                    image = video[box.frame].crop((cx-sq/2, cy-sq/2,
-                                            cx+sq/2, cy+sq/2))
-
-                    while degrees <= 90:
-                        #image = video[box.frame].crop((x,y,x+w,y+h))
-                        img = image.rotate(degrees)
-                        iw, ih = img.size
-                        ix = iw/2-w/2
-                        iy = ih/2-h/2
-                        img = img.crop((ix,iy,ix+w,iy+h))
-
-                        img.save("{0}/pos/{1}_{2}_{3}_{4}.jpg".format(
-                            args.output, video.slug, box.frame, id, degrees))
-                        degrees += 30
+# import plugins that extend vatic
+from plugins import training
 
 
 @handler("Decompresses an entire video into frames")
@@ -297,6 +75,7 @@ class extract(Command):
                 shutil.rmtree(args.output)
             raise
 
+
 @handler("Formats existing frames ")
 class formatframes(Command):
     def setup(self):
@@ -331,6 +110,7 @@ class formatframes(Command):
                 os.makedirs(os.path.dirname(path))
                 os.link(file, path)
         print "Formatted {0} frames".format(len(files))
+
 
 @handler("Imports a set of video frames")
 class load(LoadCommand):
@@ -590,6 +370,7 @@ class load(LoadCommand):
         else:
             print "Video loaded and ready for publication."
 
+
 @handler("Deletes an already imported video")
 class delete(Command):
     def setup(self):
@@ -707,6 +488,7 @@ class visualize(DumpCommand):
                       text, font = font)
 
             yield aug, frame
+
 
 @handler("Dumps the tracking data")
 class dump(DumpCommand):
@@ -1311,6 +1093,7 @@ class find(Command):
         else:
             print "No jobs matching this criteria."
 
+
 @handler("List all videos loaded", "list")
 class listvideos(Command):
     def setup(self):
@@ -1352,3 +1135,4 @@ class listvideos(Command):
                     print "{0:>3}/{1:<8}".format(video.numcompleted, video.numjobs),
                     print "${0:<15.2f}".format(video.cost),
                 print ""
+

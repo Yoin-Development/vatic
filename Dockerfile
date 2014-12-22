@@ -23,6 +23,7 @@ RUN (cd /pyvision; python setup.py install)
 env PATH /pyvision:$PATH
 
 ADD *.py /var/www/vatic/
+ADD plugins/ /var/www/vatic/plugins/
 ADD *.ttf /var/www/vatic/
 ADD public/ /var/www/vatic/public
 ADD apache_defaultfile /etc/apache2/sites-enabled/000-default.conf
