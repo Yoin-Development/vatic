@@ -29,9 +29,13 @@ import vision.pascal
 from models import Job, Video, Label, Attribute, Segment, Path, \
         CompletionBonus, PerObjectBonus
 
-# import plugins that extend vatic
-from plugins import training
-
+# import plugins that extend vatic, plugins are
+# available after the plugins directory is mounted.
+# That's why try, except is used
+try:
+    from plugins import training
+except ImportError:
+    pass
 
 @handler("Decompresses an entire video into frames")
 class extract(Command):
@@ -60,6 +64,7 @@ class extract(Command):
                 if frame % 100 == 0:
                     print ("Decoding frames {0} to {1}"
                         .format(frame, frame + 100))
+
                 if not args.no_resize:
                     image.thumbnail((args.width, args.height), Image.BILINEAR)
                 path = Video.getframepath(frame, args.output)
