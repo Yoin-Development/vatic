@@ -9,6 +9,7 @@ vaticdev:
         - ./extract:/extract/
         - ./public/frames/:/var/www/vatic/public/frames/
         - ./scripts:/scripts/:ro
+        - ./plugins:/var/www/vatic/plugins/:ro
     ports:
         - "8282:80"
     environment:
